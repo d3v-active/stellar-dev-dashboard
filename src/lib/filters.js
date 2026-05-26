@@ -24,7 +24,9 @@ export function applyTransactionFilters(transactions = [], filters = {}) {
 
 export function applyOperationFilters(operations = [], filters = {}) {
   return operations.filter((op) => {
-    if (filters.type && op.type !== filters.type) return false;
+    if (filters.type && filters.type !== "all" && op.type !== filters.type) {
+      return false;
+    }
     if (filters.account && !String(op.from || op.to || "").includes(filters.account)) {
       return false;
     }

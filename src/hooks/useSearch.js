@@ -12,18 +12,12 @@ import {
 } from "../lib/filters";
 
 export function useSearch() {
-  const { transactions, operations, connectedAddress } = useStore();
+  const { transactions, operations, connectedAddress, searchFilters, setSearchFilters } = useStore();
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState({
-    status: "all",
-    memoOnly: false,
-    minFee: "",
-    maxFee: "",
-  });
   const [savedSearches, setSavedSearches] = useState(() => loadSavedSearches());
 
   const dataset = useMemo(() => {
-    const tx = applyTransactionFilters(transactions, filters).map((item) => ({
+    const tx = applyTransactionFilters(transactions, searchFilters).map((item) => ({
       id: `tx-${item.id}`,
       type: "transaction",
       hash: item.hash,
@@ -33,7 +27,7 @@ export function useSearch() {
       meta: `${item.operation_count || 0} ops`,
     }));
 
-    const ops = applyOperationFilters(operations, {}).map((item) => ({
+    const ops = applyOperationFilters(operations, searchFilters).map((item) => ({
       id: `op-${item.id}`,
       type: "operation",
       hash: item.transaction_hash || item.id,
@@ -42,30 +36,16 @@ export function useSearch() {
       label: `${item.type} ${item.id}`,
       meta: item.from || item.to || "",
     }));
-
-    const account = connectedAddress
-      ? [
-          {
-            id: `account-${connectedAddress}`,
-            type: "account",
-            hash: connectedAddress,
-            memo: "",
-            created_at: new Date().toISOString(),
-            label: connectedAddress,
-            meta: "Connected account",
-          },
-        ]
-      : [];
-
+...
     return [...account, ...tx, ...ops];
-  }, [transactions, operations, connectedAddress, filters]);
+  }, [transactions, operations, connectedAddress, searchFilters]);
 
   const results = useMemo(() => {
     return globalSearch(dataset, query, ["label", "meta", "memo", "hash"]).slice(0, 25);
   }, [dataset, query]);
 
   function saveCurrentSearch(name) {
-    setSavedSearches(saveSearch(name, query, filters));
+    setSavedSearches(saveSearch(name, query, searchFilters));
   }
 
   function removeSavedSearch(name) {
@@ -75,14 +55,14 @@ export function useSearch() {
   function applySavedSearch(entry) {
     if (!entry) return;
     setQuery(entry.query || "");
-    setFilters(entry.filters || filters);
+    setSearchFilters(entry.filters || searchFilters);
   }
 
   return {
     query,
     setQuery,
-    filters,
-    setFilters,
+    filters: searchFilters,
+    setFilters: setSearchFilters,
     results,
     savedSearches,
     saveCurrentSearch,

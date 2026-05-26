@@ -1,95 +1,99 @@
-# stellar.js
+# stellar.ts
 
-Horizon and Soroban RPC wrappers with built-in caching and rate limiting.
+Unified Stellar Service Layer providing Horizon and Soroban RPC wrappers with built-in caching, circuit breakers, and rate limiting. This module consolidates functionality from the legacy `stellar.js` and provides a fully typed TypeScript interface.
+
+## Core Features
+
+- **Circuit Breaker**: Automatic failover and protection for Horizon/RPC requests.
+- **Intelligent Caching**: Layered memory/persistent cache with tag-based invalidation.
+- **Advanced Simulation**: Transaction simulation with fee optimization and success probability.
+- **Asset Discovery**: Comprehensive asset search and trustline recommendations.
+- **Audit Trail**: Automatic logging of all API calls and errors.
 
 ## Functions
 
-### `fetchAccount(publicKey, network?, identifier?)`
+### `fetchAccount(publicKey, network?)`
 
-Loads a Stellar account record.
+Loads a Stellar account record. Protected by a circuit breaker and cached in L2 (persistent).
 
-```js
+```ts
+import { fetchAccount } from '@/lib/stellar';
 const account = await fetchAccount('GABC...', 'testnet');
-console.log(account.balances);
 ```
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | publicKey | string | required | G... address |
-| network | `'testnet'` \| `'mainnet'` | `'testnet'` | Network to query |
-| identifier | string | `'anonymous'` | Rate limit bucket |
+| network | `NetworkName` | `'testnet'` | Network to query |
 
-Returns: `Promise<AccountRecord>`
+Returns: `Promise<Horizon.AccountResponse>`
 
 ---
 
-### `fetchTransactions(publicKey, network?, limit?, cursor?, identifier?)`
+### `fetchTransactions(publicKey, network?, limit?, cursor?)`
 
 Fetches paginated transaction history for an account.
 
-```js
-const txs = await fetchTransactions('GABC...', 'testnet', 20);
-txs.records.forEach(tx => console.log(tx.hash));
+```ts
+const { records, nextCursor, hasMore } = await fetchTransactions('GABC...', 'testnet', 20);
 ```
 
-Returns: `Promise<{ records: TransactionRecord[], next: fn, prev: fn }>`
+Returns: `Promise<{ records: TransactionRecord[], nextCursor: string | null, hasMore: boolean }>`
 
 ---
 
-### `fetchNetworkStats(network?, identifier?)`
+### `fetchNetworkStats(network?)`
 
 Returns latest ledger info and fee statistics.
 
-```js
+```ts
 const { latestLedger, feeStats } = await fetchNetworkStats('mainnet');
 ```
 
 ---
 
-### `fetchXLMPrice(identifier?)`
+### `fetchXLMPrice()`
 
-Fetches current XLM/USD price from CoinGecko with SDEX fallback.
+Fetches current XLM/USD price from CoinGecko with caching.
 
-```js
+```ts
 const { usd } = await fetchXLMPrice();
 ```
 
 ---
 
-### `getServer(network?)`
+### `runAdvancedTransactionSimulation(params)`
 
-Returns a configured `Horizon.Server` instance.
+Simulates a transaction with detailed fee analysis and success probability.
 
-```js
-const server = getServer('mainnet');
-const ledger = await server.ledgers().order('desc').limit(1).call();
+```ts
+const report = await runAdvancedTransactionSimulation({
+  sourceAccount: 'GABC...',
+  operations: [...],
+  network: 'testnet'
+});
 ```
 
 ---
 
-### `getSorobanServer(network?)`
+### `getTrustlineRecommendations(accountId, network?)`
 
-Returns a configured `SorobanRpc.Server` instance for contract interactions.
-
----
-
-### `getOperationLabel(type)`
-
-Returns a human-readable label for a Stellar operation type.
-
-```js
-getOperationLabel('invoke_host_function'); // → "Contract Call"
-```
+Analyzes an account and recommends popular verified assets.
 
 ---
 
-## Constants
+### `clearCache(pattern?)`
+
+Clears the internal cache, optionally filtering by prefix.
+
+---
+
+## Configuration
 
 ### `NETWORKS`
 
-```js
-{
-  mainnet: { name, horizonUrl, sorobanUrl, passphrase },
-  testnet: { name, horizonUrl, sorobanUrl, passphrase, faucetUrl },
-}
-```
+Supports `mainnet`, `testnet`, `futurenet`, `local`, and `custom`. Use `updateCustomNetworkConfig` to configure the custom network at runtime.
+
+### Cache TTLs
+
+Defined in `src/lib/cache.js` and used automatically by the service layer.
