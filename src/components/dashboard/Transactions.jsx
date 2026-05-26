@@ -1,10 +1,12 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useStore } from '../../lib/store'
 import { shortAddress, getOperationLabel, fetchTransactions, fetchOperations } from '../../lib/stellar'
 import CopyableValue from './CopyableValue'
 import { format } from 'date-fns'
 import GlobalSearch from '../search/GlobalSearch'
+import SearchFilters from '../search/SearchFilters'
 import useSearch from '../../hooks/useSearch'
+import { applyTransactionFilters, applyOperationFilters } from '../../lib/filters'
 
 export default function Transactions() {
   const {
@@ -29,9 +31,35 @@ export default function Transactions() {
     setOpsPagingLoading,
     network,
   } = useStore()
+  
   const [view, setView] = useState('transactions')
-  const [query, setQuery] = useState('')
-  const filteredTransactions = useSearch(transactions, query)
+  const { query, setQuery, filters, setFilters } = useSearch()
+  const [showFilters, setShowFilters] = useState(false)
+
+  const filteredTransactions = useMemo(() => {
+    let list = transactions
+    if (query) {
+      const q = query.toLowerCase()
+      list = list.filter(tx => 
+        tx.hash.toLowerCase().includes(q) || 
+        (tx.memo && tx.memo.toLowerCase().includes(q))
+      )
+    }
+    return applyTransactionFilters(list, filters)
+  }, [transactions, query, filters])
+
+  const filteredOperations = useMemo(() => {
+    let list = operations
+    if (query) {
+      const q = query.toLowerCase()
+      list = list.filter(op => 
+        (op.from && op.from.toLowerCase().includes(q)) || 
+        (op.to && op.to.toLowerCase().includes(q)) ||
+        getOperationLabel(op.type).toLowerCase().includes(q)
+      )
+    }
+    return applyOperationFilters(list, filters)
+  }, [operations, query, filters])
 
   async function handleLoadMoreTransactions() {
     if (!connectedAddress || !txHasMore || !txNextCursor || txPagingLoading) return
@@ -78,16 +106,58 @@ export default function Transactions() {
     >{label}</button>
   )
 
+  const hasActiveFilters = Object.entries(filters).some(([key, value]) => {
+    if (key === 'status') return value !== 'all'
+    if (key === 'type') return value !== 'all'
+    if (key === 'memoOnly') return value === true
+    if (key === 'minFee' || key === 'maxFee') return value !== ''
+    return false
+  })
+
   return (
     <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-        <GlobalSearch value={query} onChange={setQuery} />
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 700 }}>History</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '300px' }}>
+          <GlobalSearch value={query} onChange={setQuery} />
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            style={{
+              padding: '8px 14px',
+              background: showFilters ? 'var(--cyan-glow)' : 'var(--bg-elevated)',
+              border: `1px solid ${showFilters ? 'var(--cyan-dim)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-sm)',
+              color: showFilters ? 'var(--cyan)' : 'var(--text-secondary)',
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'var(--transition)',
+              height: '38px'
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>⚙</span>
+            <span>Filters</span>
+            {hasActiveFilters && (
+              <span style={{ 
+                width: '6px', 
+                height: '6px', 
+                borderRadius: '50%', 
+                background: 'var(--cyan)', 
+                boxShadow: '0 0 8px var(--cyan)' 
+              }} />
+            )}
+          </button>
+        </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <Tab id="transactions" label="Transactions" />
           <Tab id="operations" label="Operations" />
         </div>
       </div>
+
+      {showFilters && (
+        <SearchFilters filters={filters} onChange={setFilters} />
+      )}
 
       {view === 'transactions' && (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
@@ -98,7 +168,9 @@ export default function Transactions() {
           {txLoading ? (
             <div style={{ padding: '32px', display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>
           ) : filteredTransactions.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No transactions found</div>
+            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              {transactions.length === 0 ? 'No transactions found' : 'No transactions match your filters'}
+            </div>
           ) : (
             <>
               {filteredTransactions.map((tx, i) => (
@@ -108,7 +180,7 @@ export default function Transactions() {
                   gap: '12px',
                   alignItems: 'center',
                   padding: '12px 18px',
-                  borderBottom: i < transactions.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderBottom: i < filteredTransactions.length - 1 ? '1px solid var(--border)' : 'none',
                   transition: 'var(--transition)',
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
@@ -189,18 +261,20 @@ export default function Transactions() {
           </div>
           {opsLoading ? (
             <div style={{ padding: '32px', display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>
-          ) : operations.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No operations found</div>
+          ) : filteredOperations.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              {operations.length === 0 ? 'No operations found' : 'No operations match your filters'}
+            </div>
           ) : (
             <>
-              {operations.map((op, i) => (
+              {filteredOperations.map((op, i) => (
                 <div key={op.id} style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr auto',
                   gap: '12px',
                   alignItems: 'center',
                   padding: '12px 18px',
-                  borderBottom: i < operations.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderBottom: i < filteredOperations.length - 1 ? '1px solid var(--border)' : 'none',
                   transition: 'var(--transition)',
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
@@ -272,4 +346,3 @@ export default function Transactions() {
     </div>
   )
 }
-

@@ -4,11 +4,18 @@ import { syncState, onStateChange } from '../utils/stateSync'
 import type {
   NetworkName,
   NetworkStats,
-  PaymentPathRecord,
 } from './stellar'
 import type { Horizon, SorobanRpc } from '@stellar/stellar-sdk'
 
 // ─── State shape ──────────────────────────────────────────────────────────────
+
+export interface SearchFilters {
+  status: 'all' | 'success' | 'failed'
+  memoOnly: boolean
+  minFee: string
+  maxFee: string
+  type: string
+}
 
 export interface StoreState {
   // Network
@@ -108,13 +115,14 @@ export interface StoreState {
   setPrices: (prices: Record<string, { usd: number | null; usd_24h_change: number | null }>) => void
   setPricesLoading: (loading: boolean) => void
   setPricesError: (error: string | null) => void
+
+  // Search Filters
+  searchFilters: SearchFilters
+  setSearchFilters: (filters: Partial<SearchFilters>) => void
 }
 
 // ─── Persisted keys ───────────────────────────────────────────────────────────
-// Only lightweight UI preferences are persisted — large data (txs, ops) is
-// re-fetched on load and never written to IndexedDB.
-
-const PERSIST_KEYS: Array<keyof StoreState> = ['network', 'theme', 'activeTab', 'savedSearches', 'multiSigMode']
+const PERSIST_KEYS: Array<keyof StoreState> = ['network', 'theme', 'activeTab', 'savedSearches', 'multiSigMode', 'searchFilters']
 const STORE_PERSIST_KEY = 'store:preferences'
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -238,13 +246,23 @@ export const useStore = create<StoreState>((set, get) => ({
   setPrices: (prices) => set({ prices, pricesError: null }),
   setPricesLoading: (loading) => set({ pricesLoading: loading }),
   setPricesError: (error) => set({ pricesError: error }),
+
+  // Search Filters
+  searchFilters: {
+    status: 'all',
+    memoOnly: false,
+    minFee: '',
+    maxFee: '',
+    type: 'all',
+  },
+  setSearchFilters: (filters) => set((state) => ({
+    searchFilters: { ...state.searchFilters, ...filters }
+  })),
 }))
 
 // ─── Persistence middleware ───────────────────────────────────────────────────
-// Hydrate persisted preferences once on startup, then sync writes to IDB.
 
 if (typeof window !== 'undefined') {
-  // Hydrate from IndexedDB on startup (#105)
   getStoredValue(STORE_PERSIST_KEY).then((saved: Record<string, unknown> | null) => {
     if (saved && typeof saved === 'object') {
       const slice: Partial<StoreState> = {}
@@ -255,21 +273,18 @@ if (typeof window !== 'undefined') {
     }
   }).catch(() => {})
 
-  // Write persisted keys to IDB on every state change
   useStore.subscribe((state) => {
     const slice: Record<string, unknown> = {}
     for (const key of PERSIST_KEYS) slice[key] = state[key]
     syncState(STORE_PERSIST_KEY, slice).catch(() => {})
   })
 
-  // Listen for cross-tab state changes and apply them (#105)
   onStateChange((key: string, value: unknown) => {
     if (key === STORE_PERSIST_KEY && value && typeof value === 'object') {
       const current = useStore.getState()
       const incoming = value as Record<string, unknown>
       const patch: Partial<StoreState> = {}
       for (const k of PERSIST_KEYS) {
-        // Last-writer-wins: apply incoming only if it differs from current
         if (incoming[k] !== undefined && incoming[k] !== current[k]) {
           (patch as Record<string, unknown>)[k] = incoming[k]
         }

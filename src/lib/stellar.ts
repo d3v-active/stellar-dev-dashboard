@@ -275,6 +275,10 @@ export async function fetchAccountCreationDate(
   publicKey: string,
   network: NetworkName = 'testnet'
 ): Promise<string | null> {
+  const cacheKey = `creation-date:${publicKey}:${network}`
+  const cached = stellarCache.get(cacheKey)
+  if (cached) return cached
+
   const server = getServer(network)
 
   try {
@@ -286,9 +290,12 @@ export async function fetchAccountCreationDate(
       .call()
 
     const operation = ops.records[0]
-    if (operation?.type !== 'create_account') return null
-
-    return operation.created_at || null
+    const date = operation?.type === 'create_account' ? operation.created_at || null : null
+    
+    if (date) {
+      stellarCache.set(cacheKey, date, TTL.ACCOUNT, ['account', publicKey])
+    }
+    return date
   } catch {
     return null
   }
@@ -366,6 +373,10 @@ function parseTopOfBookPrice(levels: Array<{ price?: string }> = []): number | n
 }
 
 export async function fetchXLMPrice(): Promise<XLMPrice> {
+  const cacheKey = 'xlm-price'
+  const cached = stellarCache.get(cacheKey)
+  if (cached) return cached
+
   const response = await fetch(COINGECKO_XLM_PRICE_URL)
 
   if (!response.ok) {
@@ -379,10 +390,12 @@ export async function fetchXLMPrice(): Promise<XLMPrice> {
     throw new Error('XLM price data unavailable')
   }
 
-  return {
+  const result: XLMPrice = {
     usd,
     source: 'coingecko',
   }
+  stellarCache.set(cacheKey, result, TTL.PRICE, ['price', 'xlm'])
+  return result
 }
 
 export async function fetchAssetPrice(
@@ -394,6 +407,10 @@ export async function fetchAssetPrice(
   if (!asset.asset_type.startsWith('credit_alphanum') || !asset.asset_code || !asset.asset_issuer) {
     return null
   }
+
+  const cacheKey = `asset-price:${asset.asset_code}:${asset.asset_issuer}:${network}`
+  const cached = stellarCache.get(cacheKey)
+  if (cached) return cached
 
   const params = new URLSearchParams({
     selling_asset_type: asset.asset_type,
@@ -412,26 +429,33 @@ export async function fetchAssetPrice(
   const bestBid = parseTopOfBookPrice(orderBook.bids)
   const bestAsk = parseTopOfBookPrice(orderBook.asks)
 
+  let result: AssetPriceEstimate | null = null
+
   if (bestBid !== null && bestAsk !== null) {
-    return {
+    result = {
       xlm: (bestBid + bestAsk) / 2,
       source: 'sdex',
       method: 'midpoint',
       bestBid,
       bestAsk,
     }
+  } else {
+    const fallback = bestBid ?? bestAsk
+    if (fallback !== null) {
+      result = {
+        xlm: fallback,
+        source: 'sdex',
+        method: bestBid !== null ? 'best_bid' : 'best_ask',
+        bestBid,
+        bestAsk,
+      }
+    }
   }
 
-  const fallback = bestBid ?? bestAsk
-  if (fallback === null) return null
-
-  return {
-    xlm: fallback,
-    source: 'sdex',
-    method: bestBid !== null ? 'best_bid' : 'best_ask',
-    bestBid,
-    bestAsk,
+  if (result) {
+    stellarCache.set(cacheKey, result, TTL.ASSET, ['price', asset.asset_code])
   }
+  return result
 }
 
 
@@ -1696,4 +1720,64 @@ export async function fetchPaymentPaths(
   return data._embedded?.records ?? []
 }
 
+/**
+ * Clear cache for specific pattern
+ * @param {string} pattern - Key pattern to clear
+ */
+export function clearCache(pattern: string | null = null) {
+  if (pattern) {
+    stellarCache.invalidatePrefix(pattern)
+  } else {
+    stellarCache.clear()
+  }
+}
+
+/**
+ * Get cache statistics
+ * @returns {object} Cache stats
+ */
+export function getCacheStats() {
+  return stellarCache.getStats()
+}
+
 export { StellarSdk }
+
+export default {
+  NETWORKS,
+  getNetworkDetails,
+  updateCustomNetworkConfig,
+  getServer,
+  getSorobanServer,
+  fetchAccount,
+  fetchTransactions,
+  fetchOperations,
+  fetchAccountOffers,
+  getOperationLabel,
+  fetchAccountCreationDate,
+  streamLedgers,
+  fetchNetworkStats,
+  fetchXLMPrice,
+  fetchAssetPrice,
+  fundTestnetAccount,
+  fetchContractInfo,
+  simulateContractCall,
+  invokeContract,
+  isValidPublicKey,
+  isValidContractId,
+  formatXLM,
+  shortAddress,
+  buildTransaction,
+  simulateTransaction,
+  runAdvancedTransactionSimulation,
+  exportTransactionXDR,
+  fetchPaymentPaths,
+  fetchAssets,
+  fetchAssetStats,
+  fetchIssuerInfo,
+  getTrustlineRecommendations,
+  searchAssets,
+  fetchAssetMarketData,
+  clearCache,
+  getCacheStats,
+  StellarSdk,
+}

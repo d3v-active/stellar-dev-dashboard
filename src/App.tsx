@@ -55,6 +55,7 @@ import { TourLauncher } from './components/tutorial'
 import SearchBar from './components/layout/SearchBar'
 import UserPreferences from './components/preferences/UserPreferences'
 import MobileNavigation from './components/layout/MobileNavigation'
+import KeyboardNavigation from './components/accessibility/KeyboardNavigation'
 
 interface SearchResult {
   type?: string
@@ -309,6 +310,7 @@ function DashboardLayout() {
         {isMobile && <MobileHeader />}
         <Sidebar isMobile={isMobile} />
         <main style={getMainStyles()}>
+          <KeyboardNavigation />
           <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ flex: 1 }}>
               <SearchBar onSelectResult={handleSearchResult} />
