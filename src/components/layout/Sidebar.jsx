@@ -1,7 +1,8 @@
 import React from 'react'
 import { useStore } from '../../lib/store'
 import CopyableValue from '../dashboard/CopyableValue'
-import { NETWORKS, getCustomNetworkAuthHeaders, updateCustomNetworkConfig } from '../../lib/stellar'
+import { NETWORKS, updateCustomNetworkConfig, switchToCustomProfile, loadCustomNetworkProfiles } from '../../lib/stellar'
+import { getActiveProfile } from '../../lib/userPreferences'
 
 const NAV_ITEMS = [
   { type: 'header', label: 'ANALYTICS' },
@@ -55,9 +56,51 @@ export default function Sidebar({ isMobile = false }) {
     setMobileMenuOpen,
   } = useStore()
 
+  const [customProfiles, setCustomProfiles] = useState([])
+  const [activeProfileId, setActiveProfileId] = useState(null)
+
+  // Load custom profiles on mount (Issue #188)
+  useEffect(() => {
+    if (network === 'custom') {
+      loadCustomNetworkProfiles().then(profiles => {
+        setCustomProfiles(profiles)
+        // Load active profile
+        getActiveProfile().then(profile => {
+          if (profile) {
+            setActiveProfileId(profile.id)
+            // Populate the network config
+            updateCustomNetworkConfig({
+              horizonUrl: profile.horizonUrl,
+              sorobanUrl: profile.sorobanUrl,
+              passphrase: profile.passphrase,
+            })
+          }
+        })
+      })
+    }
+  }, [network])
+
   const handleNavClick = (tabId) => {
     setActiveTab(tabId)
     setMobileMenuOpen(false)
+  }
+
+  const handleSwitchProfile = async (profileId) => {
+    try {
+      await switchToCustomProfile(profileId)
+      setActiveProfileId(profileId)
+      // Force store update to refresh clients
+      const profile = customProfiles.find(p => p.id === profileId)
+      if (profile) {
+        updateCustomNetworkConfig({
+          horizonUrl: profile.horizonUrl,
+          sorobanUrl: profile.sorobanUrl,
+          passphrase: profile.passphrase,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to switch profile:', err)
+    }
   }
 
   const sidebarStyles = {
@@ -184,20 +227,47 @@ export default function Sidebar({ isMobile = false }) {
 
           {network === 'custom' && (
             <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Profile Selector (Issue #188) */}
+              {customProfiles.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                    Quick Switch
+                  </div>
+                  <select
+                    value={activeProfileId || ''}
+                    onChange={(e) => handleSwitchProfile(e.target.value)}
+                    style={{
+                      ...customInputStyle,
+                      fontSize: '11px',
+                    }}
+                  >
+                    <option value="">Select Profile...</option>
+                    {customProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
               <input
                 placeholder="Horizon URL"
+                key={`horizon-${activeProfileId}`}
                 defaultValue={NETWORKS.custom.horizonUrl}
                 style={customInputStyle}
                 onChange={(e) => updateCustomNetworkConfig({ horizonUrl: e.target.value.trim() })}
               />
               <input
                 placeholder="Soroban RPC URL"
+                key={`soroban-${activeProfileId}`}
                 defaultValue={NETWORKS.custom.sorobanUrl}
                 style={customInputStyle}
                 onChange={(e) => updateCustomNetworkConfig({ sorobanUrl: e.target.value.trim() })}
               />
               <input
                 placeholder="Network Passphrase"
+                key={`passphrase-${activeProfileId}`}
                 defaultValue={NETWORKS.custom.passphrase}
                 style={customInputStyle}
                 onChange={(e) => updateCustomNetworkConfig({ passphrase: e.target.value.trim() })}
