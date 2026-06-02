@@ -72,6 +72,9 @@ import UserPreferences from './components/preferences/UserPreferences'
 import NetworkIndicator from './components/layout/NetworkIndicator'
 import MobileNavigation from './components/layout/MobileNavigation'
 import KeyboardNavigation from './components/accessibility/KeyboardNavigation'
+import ThemeToggle from './components/layout/ThemeToggle'
+import OfflineBanner from './components/layout/OfflineBanner'
+import PWAInstallBanner from './components/PWAInstallBanner'
 import { useSwipeGesture } from './hooks/useSwipeGesture'
 
 interface SearchResult {
@@ -256,7 +259,7 @@ function DashboardLayout() {
   }, [isMobileMenuOpen])
 
   useEffect(() => {
-    addBreadcrumb(`Navigated to ${activeTab} tab`, 'navigation', { activeTab })
+    addBreadcrumb(`Mapsd to ${activeTab} tab`, 'navigation', { activeTab })
     trackSecurityEvent(SecurityEventType.CONFIG_CHANGED, {
       target: 'activeTab',
       metadata: { activeTab },
@@ -348,6 +351,7 @@ function DashboardLayout() {
             <div style={{ flex: 1 }}>
               <GlobalSearch onSelectResult={handleSearchResult} />
             </div>
+            <ThemeToggle />
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <NetworkIndicator />
             </div>
