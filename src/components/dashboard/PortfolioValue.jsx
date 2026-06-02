@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../../lib/store'
 import { fetchPrices, calculatePortfolioValue } from '../../lib/priceFeed'
-import { ee } from '../../lib/stellar'
+import { getServer } from '../../lib/stellar'
 import {
   calculateAssetAllocation,
   calculateDiversificationScore,
@@ -99,7 +99,7 @@ export default function PortfolioValue() {
         const currentBalancesMap = {}
         portfolio.items.forEach(item => { currentBalancesMap[item.code] = item.amount })
 
-        const server = ee(network)
+        const server = getServer(network)
         const history = await fetchHistoricalPerformance(server, connectedAddress, currentBalancesMap, 30)
         
         if (!cancelled) setHistoricalData(history)
