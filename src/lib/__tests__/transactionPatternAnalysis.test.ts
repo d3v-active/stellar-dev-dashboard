@@ -1,6 +1,7 @@
 /**
  * Unit tests for transactionPatternAnalysis.ts (D-005)
  */
+import { describe, it, expect } from 'vitest'
 import {
   buildHourlyActivity,
   findPeakActivity,
