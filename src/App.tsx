@@ -42,6 +42,7 @@ import ThemeToggle from './components/layout/ThemeToggle'
 import OfflineBanner from './components/layout/OfflineBanner'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { useSwipeGesture } from './hooks/useSwipeGesture'
+import DevToolbar from './components/dashboard/DevToolbar'
 
 interface SearchResult {
   type?: string
@@ -91,6 +92,7 @@ const TABS: Record<string, TabComponent> = {
   systemHealth: lazyTab(() => import('./components/dashboard/SystemHealth')),
   performance: lazyTab(() => import('./components/dashboard/PerformanceMonitor')),
   settings: lazyTab(() => import('./components/dashboard/Settings')),
+  collaboration: lazyTab(() => import('./components/dashboard/CollaborationTab')),
   audit: lazyTab(() => import('./components/dashboard/AuditLog')),
   anchors: lazyNamedTab(() => import('./components/anchors'), 'AnchorIntegration'),
   search: lazyTab(() => import('./components/dashboard/AdvancedSearch')),
@@ -98,6 +100,7 @@ const TABS: Record<string, TabComponent> = {
   liveActivity: lazyTab(() => import('./components/dashboard/LiveActivityFeed')),
   claimableBalances: lazyTab(() => import('./components/dashboard/ClaimableBalances')),
   dataExport: lazyTab(() => import('./components/dashboard/DataExport')),
+  did: lazyTab(() => import('./components/dashboard/DIDManagement')),
 }
 
 function TabLoadingFallback() {
@@ -374,6 +377,7 @@ function DashboardLayout() {
           </ErrorBoundary>
         </main>
         <TourLauncher />
+        <DevToolbar />
         <NotificationBell
           onClick={() => setNotificationsOpen(true)}
           bottomOffset={isMobile ? 'calc(60px + 16px)' : '20px'}
