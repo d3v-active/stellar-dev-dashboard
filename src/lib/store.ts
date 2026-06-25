@@ -264,6 +264,15 @@ export interface StoreState {
   perNetworkData: Record<string, NetworkScopedData>
   setPerNetworkData: (network: string, data: Partial<NetworkScopedData>) => void
   clearNetworkScopedData: () => void
+
+  // RBAC (#410)
+  currentUserRole: string
+  setCurrentUserRole: (role: string) => void
+
+  // Session Recording (#410)
+  sessionRecordingActive: boolean
+  sessionRecordingId: string | null
+  setSessionRecordingActive: (active: boolean, id?: string | null) => void
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -583,6 +592,15 @@ export const useStore = create<StoreState>((set) => ({
     }
   }),
   toggleLedgerStatsWidget: () => set((state) => ({ showLedgerStatsWidget: !state.showLedgerStatsWidget })),
+
+  // RBAC (#410)
+  currentUserRole: 'viewer',
+  setCurrentUserRole: (role) => set({ currentUserRole: role }),
+
+  // Session Recording (#410)
+  sessionRecordingActive: false,
+  sessionRecordingId: null,
+  setSessionRecordingActive: (active, id = null) => set({ sessionRecordingActive: active, sessionRecordingId: id ?? null }),
 }))
 
 // ─── Expose store for e2e testing ────────────────────────────────────────────
