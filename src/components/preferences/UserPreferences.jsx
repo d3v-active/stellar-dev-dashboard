@@ -5,24 +5,8 @@ import ThemeSettings from './ThemeSettings'
 import AccessibilitySettings from './AccessibilitySettings'
 import NotificationPreferences from '../notifications/NotificationPreferences'
 import { showTestNotification } from '../../utils/offline'
-import {
-  Bell,
-  Download,
-  RefreshCw,
-  Share2,
-  SlidersHorizontal,
-  Upload,
-} from 'lucide-react'
-import {
-  applyPreferencePreset,
-  createPreferencePreset,
-  exportPreferences,
-  getPreferenceSyncStatus,
-  importPreferences,
-  PREFERENCE_PRESETS,
-  sharePreferencePreset,
-  validatePreferences,
-} from '../../lib/userPreferences'
+import { Bell, Globe2 } from 'lucide-react'
+import { useI18nContext } from '../I18nProvider.jsx'
 
 const TABS = [
   { id: 'general', label: 'General' },
@@ -34,7 +18,19 @@ const TABS = [
 ]
 
 export default function UserPreferences({ onClose }) {
-  const { preferences, update, save, reset, loading } = usePreferences()
+  const { preferences, update, reset, loading } = usePreferences()
+  const {
+    changeLanguage,
+    currentLanguage,
+    currentLocale,
+    supportedLanguages,
+    localeProfile,
+    regionalContent,
+    formatDateTime,
+    formatNumber,
+    formatCurrency,
+    isRTL,
+  } = useI18nContext()
   const [activeTab, setActiveTab] = useState('general')
   const [saved, setSaved] = useState(false)
   const [shareToken, setShareToken] = useState('')
@@ -47,42 +43,9 @@ export default function UserPreferences({ onClose }) {
     setTimeout(() => setSaved(false), 1500)
   }
 
-  const handleSavePreferences = async (nextPreferences) => {
-    await save(nextPreferences)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
-  }
-
-  const handlePreset = async (presetId) => {
-    await handleSavePreferences(applyPreferencePreset(presetId, preferences))
-  }
-
-  const downloadText = (filename, content, type) => {
-    const blob = new Blob([content], { type })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleExport = () => {
-    downloadText('stellar-preferences.json', exportPreferences(preferences), 'application/json')
-  }
-
-  const handleImport = async () => {
-    const payload = prompt('Paste exported preferences JSON')
-    if (!payload) return
-    await handleSavePreferences(importPreferences(payload))
-  }
-
-  const handleSharePreset = () => {
-    const preset = createPreferencePreset('Shared preferences', preferences, {
-      description: 'Shared dashboard preference preset',
-      shared: true,
-    })
-    setShareToken(sharePreferencePreset(preset))
+  const handleLanguageChange = async (languageCode) => {
+    await changeLanguage(languageCode)
+    await handleChange('language', languageCode)
   }
 
   if (loading) {
@@ -179,15 +142,37 @@ export default function UserPreferences({ onClose }) {
 
             <PreferenceRow label="Language">
               <select
-                value={preferences.language}
-                onChange={(e) => handleChange('language', e.target.value)}
+                value={currentLanguage || preferences.language}
+                onChange={(e) => handleLanguageChange(e.target.value)}
                 style={selectStyle}
               >
-                <option value="en">English</option>
-                <option value="es">Español</option>
-                <option value="zh">中文</option>
+                {supportedLanguages.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.nativeLabel} ({language.locale})
+                  </option>
+                ))}
               </select>
             </PreferenceRow>
+
+            <div style={{
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-elevated)',
+              padding: '12px',
+              display: 'grid',
+              gap: '8px',
+              fontSize: '12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
+                <Globe2 size={14} />
+                {localeProfile.label}
+              </div>
+              <LocalePreview label="Region" value={`${localeProfile.region} / ${currentLocale} / ${isRTL ? 'RTL' : 'LTR'}`} />
+              <LocalePreview label="Date" value={formatDateTime('2026-06-25T15:30:00Z')} />
+              <LocalePreview label="Number" value={formatNumber(1234567.89)} />
+              <LocalePreview label="Currency" value={formatCurrency(1234.56)} />
+              <LocalePreview label="Local note" value={regionalContent.defaultNetworkNotice} />
+            </div>
 
             <PreferenceRow label="Compact Mode">
               <Toggle
@@ -348,6 +333,15 @@ function PreferenceRow({ label, children }) {
         {label}
       </span>
       {children}
+    </div>
+  )
+}
+
+function LocalePreview({ label, value }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+      <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{label}</span>
+      <span style={{ color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>{value}</span>
     </div>
   )
 }
