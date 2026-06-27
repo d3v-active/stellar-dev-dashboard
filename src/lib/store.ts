@@ -3,6 +3,7 @@ import { getStoredValue } from './storage'
 import { syncState, onStateChange } from '../utils/stateSync'
 import type { NetworkName, NetworkStats } from './stellar'
 import type { Horizon, SorobanRpc } from '@stellar/stellar-sdk'
+import { applyCustomThemeToDOM, removeCustomThemeFromDOM, saveThemeVarsToStorage, clearThemeVarsFromStorage, type ThemeDefinition } from '../styles/themeTypes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,13 @@ export interface SearchFilters {
   maxAmount: string
   startDate: string
   endDate: string
+}
+
+export interface FilterExpression {
+  key: string
+  operator: string
+  value: unknown
+  not?: boolean
 }
 
 export interface ComparisonSlot {
@@ -37,6 +45,18 @@ export interface Notification {
 export interface StreamLedger {
   sequence: number
   [key: string]: unknown
+}
+
+export interface NetworkScopedData {
+  transactions: Horizon.ServerApi.TransactionRecord[]
+  txNextCursor: string | null
+  txHasMore: boolean
+  txPagingLoading: boolean
+  operations: Horizon.ServerApi.OperationRecord[]
+  opsNextCursor: string | null
+  opsHasMore: boolean
+  opsPagingLoading: boolean
+  accountData: Horizon.AccountResponse | null
 }
 
 export interface LedgerStatsEntry {
@@ -67,8 +87,8 @@ export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
 }
 
 const PERSIST_KEYS = [
-  'network', 'theme', 'activeTab', 'savedSearches', 'multiSigMode', 'searchFilters',
-  'notificationHistory', 'unreadNotificationCount',
+  'network', 'theme', 'customTheme', 'themeBuilderDraft', 'activeTab', 'savedSearches',
+  'multiSigMode', 'searchFilters', 'notificationHistory', 'unreadNotificationCount',
 ] as const
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,6 +121,10 @@ export interface StoreState {
   setNetwork: (network: NetworkName) => void
   theme: 'light' | 'dark'
   toggleTheme: () => void
+  customTheme: ThemeDefinition | null
+  setCustomTheme: (theme: ThemeDefinition | null) => void
+  themeBuilderDraft: ThemeDefinition | null
+  setThemeBuilderDraft: (draft: ThemeDefinition | null) => void
   isMobileMenuOpen: boolean
   setMobileMenuOpen: (open: boolean) => void
 
@@ -187,6 +211,13 @@ export interface StoreState {
   searchFilters: SearchFilters
   setSearchFilters: (filters: Partial<SearchFilters>) => void
 
+  filterExpressions: FilterExpression[]
+  setFilterExpressions: (exprs: FilterExpression[]) => void
+  addFilterExpression: (expr: FilterExpression) => void
+  removeFilterExpression: (index: number) => void
+  updateFilterExpression: (index: number, expr: Partial<FilterExpression>) => void
+  clearFilterExpressions: () => void
+
   comparisonSlots: ComparisonSlot[]
   addComparisonSlot: () => void
   removeComparisonSlot: (index: number) => void
@@ -228,27 +259,125 @@ export interface StoreState {
   showLedgerStatsWidget: boolean
   addLedgerStatsEntry: (entry: LedgerStatsEntry) => void
   toggleLedgerStatsWidget: () => void
+
+  // Per-network data buckets for cross-network switching
+  perNetworkData: Record<string, NetworkScopedData>
+  setPerNetworkData: (network: string, data: Partial<NetworkScopedData>) => void
+  clearNetworkScopedData: () => void
+
+  // RBAC (#410)
+  currentUserRole: string
+  setCurrentUserRole: (role: string) => void
+
+  // Session Recording (#410)
+  sessionRecordingActive: boolean
+  sessionRecordingId: string | null
+  setSessionRecordingActive: (active: boolean, id?: string | null) => void
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useStore = create<StoreState>((set) => ({
   network: readInitialNetwork(),
+  perNetworkData: {},
   setNetwork: (network) => {
     try { if (typeof localStorage !== 'undefined') localStorage.setItem(SELECTED_NETWORK_KEY, network) } catch { /* ignore */ }
-    set({
-      network,
-      accountData: null,
-      transactions: [],
-      operations: [],
-      txNextCursor: null,
-      txHasMore: false,
-      txPagingLoading: false,
-      opsNextCursor: null,
-      opsHasMore: false,
-      opsPagingLoading: false,
+
+    // Stash current network data before switching
+    const stash = (prev: StoreState) => {
+      const current = prev.network
+      const scoped: NetworkScopedData = {
+        transactions: prev.transactions,
+        txNextCursor: prev.txNextCursor,
+        txHasMore: prev.txHasMore,
+        txPagingLoading: false,
+        operations: prev.operations,
+        opsNextCursor: prev.opsNextCursor,
+        opsHasMore: prev.opsHasMore,
+        opsPagingLoading: false,
+        accountData: prev.accountData,
+      }
+      return { ...prev.perNetworkData, [current]: scoped }
+    }
+
+    set((state) => {
+      const updatedData = stash(state)
+      const cached = updatedData[network]
+      const clear = {
+        networkStats: null,
+        statsLoading: false,
+        streamLedgers: [],
+        streamStatus: 'disconnected',
+        streamError: null,
+        contractData: null,
+        contractLoading: false,
+        contractError: null,
+        prices: {},
+        pricesLoading: false,
+        pricesError: null,
+        ledgerHistory: [],
+        baseFeeHistory: [],
+      }
+      if (cached) {
+        return {
+          network,
+          perNetworkData: updatedData,
+          ...clear,
+          accountData: cached.accountData,
+          transactions: cached.transactions,
+          txNextCursor: cached.txNextCursor,
+          txHasMore: cached.txHasMore,
+          txPagingLoading: false,
+          operations: cached.operations,
+          opsNextCursor: cached.opsNextCursor,
+          opsHasMore: cached.opsHasMore,
+          opsPagingLoading: false,
+        }
+      }
+      return {
+        network,
+        perNetworkData: updatedData,
+        ...clear,
+        accountData: null,
+        transactions: [],
+        txNextCursor: null,
+        txHasMore: false,
+        txPagingLoading: false,
+        operations: [],
+        opsNextCursor: null,
+        opsHasMore: false,
+        opsPagingLoading: false,
+      }
     })
   },
+  setPerNetworkData: (network, data) => set((state) => ({
+    perNetworkData: {
+      ...state.perNetworkData,
+      [network]: { ...(state.perNetworkData[network] || {
+        transactions: [], txNextCursor: null, txHasMore: false, txPagingLoading: false,
+        operations: [], opsNextCursor: null, opsHasMore: false, opsPagingLoading: false,
+        accountData: null,
+      }), ...data },
+    },
+  })),
+  clearNetworkScopedData: () => set((state) => ({
+    perNetworkData: {},
+    accountData: null,
+    transactions: [],
+    txNextCursor: null,
+    txHasMore: false,
+    txPagingLoading: false,
+    operations: [],
+    opsNextCursor: null,
+    opsHasMore: false,
+    opsPagingLoading: false,
+    networkStats: null,
+    statsLoading: false,
+    streamLedgers: [],
+    streamStatus: 'disconnected',
+    contractData: null,
+    prices: {},
+  })),
 
   theme: getInitialTheme(),
   toggleTheme: () => set((state) => {
@@ -257,6 +386,24 @@ export const useStore = create<StoreState>((set) => ({
     if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', newTheme)
     return { theme: newTheme }
   }),
+
+  customTheme: null,
+  setCustomTheme: (theme) => {
+    if (theme && typeof localStorage !== 'undefined') saveThemeVarsToStorage(theme)
+    set({ customTheme: theme })
+  },
+
+  themeBuilderDraft: null,
+  setThemeBuilderDraft: (draft) => {
+    if (draft) {
+      applyCustomThemeToDOM(draft)
+      if (typeof localStorage !== 'undefined') saveThemeVarsToStorage(draft)
+    } else {
+      removeCustomThemeFromDOM()
+      if (typeof localStorage !== 'undefined') clearThemeVarsFromStorage()
+    }
+    set({ themeBuilderDraft: draft })
+  },
 
   isMobileMenuOpen: false,
   setMobileMenuOpen: (open) => set({ isMobileMenuOpen: open }),
@@ -353,6 +500,19 @@ export const useStore = create<StoreState>((set) => ({
   searchFilters: DEFAULT_SEARCH_FILTERS,
   setSearchFilters: (filters) => set((state) => ({ searchFilters: { ...state.searchFilters, ...filters } })),
 
+  filterExpressions: [],
+  setFilterExpressions: (exprs) => set({ filterExpressions: exprs }),
+  addFilterExpression: (expr) => set((state) => ({ filterExpressions: [...state.filterExpressions, expr] })),
+  removeFilterExpression: (index) => set((state) => ({
+    filterExpressions: state.filterExpressions.filter((_, i) => i !== index),
+  })),
+  updateFilterExpression: (index, partial) => set((state) => ({
+    filterExpressions: state.filterExpressions.map((e, i) =>
+      i === index ? { ...e, ...partial } : e
+    ),
+  })),
+  clearFilterExpressions: () => set({ filterExpressions: [] }),
+
   comparisonSlots: [],
   addComparisonSlot: () => set((state) => ({
     comparisonSlots: [...state.comparisonSlots, { key: '', data: null, loading: false, error: null }],
@@ -432,6 +592,15 @@ export const useStore = create<StoreState>((set) => ({
     }
   }),
   toggleLedgerStatsWidget: () => set((state) => ({ showLedgerStatsWidget: !state.showLedgerStatsWidget })),
+
+  // RBAC (#410)
+  currentUserRole: 'viewer',
+  setCurrentUserRole: (role) => set({ currentUserRole: role }),
+
+  // Session Recording (#410)
+  sessionRecordingActive: false,
+  sessionRecordingId: null,
+  setSessionRecordingActive: (active, id = null) => set({ sessionRecordingActive: active, sessionRecordingId: id ?? null }),
 }))
 
 // ─── Expose store for e2e testing ────────────────────────────────────────────
@@ -451,7 +620,13 @@ if (typeof window !== 'undefined') {
     if (slice.searchFilters) {
       slice.searchFilters = { ...DEFAULT_SEARCH_FILTERS, ...slice.searchFilters }
     }
-    if (Object.keys(slice).length > 0) useStore.setState(slice)
+    if (Object.keys(slice).length > 0) {
+      useStore.setState(slice)
+      const restored = slice as Record<string, unknown>
+      if (restored.themeBuilderDraft) {
+        applyCustomThemeToDOM(restored.themeBuilderDraft as ThemeDefinition)
+      }
+    }
   }).catch(() => {})
 
   useStore.subscribe((state) => {
